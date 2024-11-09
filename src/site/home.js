@@ -57,7 +57,9 @@ export default function Home() {
   const [coinBalance, setCoinBalance] = useState(0);
   const [transports, setTransports] = useState([]);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [gpsPenaltydialogOpen, setGPSPenaltyDialogOpen] = useState(false);
   const [travelTime, setTravelTime] = useState('');
+  const [gpsPenaltyTime, setGPSPenaltyTime] = useState('');
   const [travelCost, setTravelCost] = useState(0);
   const [selectedTransportId, setSelectedTransportId] = useState(null);
   const [teamSwitchDialogOpen, setTeamSwitchDialogOpen] = useState(false);
@@ -94,6 +96,7 @@ export default function Home() {
 
       if (!response.ok) throw new Error('Network response was not ok');
       const data = await response.json();
+      console.log(data.data)
       setCurrentCard(data.data.team.card.id ? data.data.team.card : null);
       setTeamName(data.data.team.typeName);
       setTeamTypeId(data.data.team.typeID);
@@ -206,8 +209,12 @@ export default function Home() {
 
   const handleTransportClick = (transportId, transportCostIn) => {
     setSelectedTransportId(transportId);
-    setTravelCost(transportCostIn)
+    setTravelCost(transportCostIn);
     setDialogOpen(true);
+  };
+
+  const handleGPSPenaltyClick = () => {
+    setGPSPenaltyDialogOpen(true);
   };
 
   const handleDialogClose = () => {
@@ -215,6 +222,11 @@ export default function Home() {
     setTravelTime('');
     setTravelCost(0);
     setSelectedTransportId(null);
+  };
+
+  const handleGPSPenaltyDialogClose = () => {
+    setGPSPenaltyDialogOpen(false);
+    setGPSPenaltyTime('');
   };
 
   const handleDialogConfirm = async () => {
@@ -239,6 +251,27 @@ export default function Home() {
       }
     } else {
       toast.warn('Travel costs more than your balance allows!');
+    }
+  };
+
+  const handleGPSPenaltyDialogConfirm = async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(`${API_BASE_URL}/team/gpsPenalty`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ penaltyTime: Number(gpsPenaltyTime) }),
+      });
+
+      if (!response.ok) throw new Error('Network response was not ok');
+      const result = await response.json();
+      setCoinBalance(result.balance);
+      handleGPSPenaltyDialogClose();
+    } catch (error) {
+      console.error('Error sending gps penalty request:', error);
     }
   };
 
@@ -354,7 +387,7 @@ export default function Home() {
                 key={transport.ID}
                 variant="contained"
                 onClick={() => handleTransportClick(transport.ID, transport.Cost)}
-                disabled={(teamTimeout || currentCard) && transport.AllowTimeout === 0 }
+                disabled={(teamTimeout || currentCard) && transport.AllowTimeout === 0}
               >
                 {transport.Name} (Cost: ${transport.Cost}/min)
               </StyledButton>
@@ -364,6 +397,7 @@ export default function Home() {
           <Dialog open={dialogOpen} onClose={handleDialogClose}>
             <DialogTitle>Enter Travel Time</DialogTitle>
             <DialogContent>
+              <Typography>Trip price: {travelTime * travelCost}</Typography>
               <TextField
                 autoFocus
                 margin="dense"
@@ -399,17 +433,51 @@ export default function Home() {
             </DialogActions>
           </Dialog>
 
+          <Dialog open={gpsPenaltydialogOpen} onClose={handleGPSPenaltyDialogClose}>
+            <DialogTitle>Enter Penalty Time</DialogTitle>
+            <DialogContent>
+              <TextField
+                autoFocus
+                margin="dense"
+                label="Penalty Time (minutes)"
+                type="number"
+                fullWidth
+                value={gpsPenaltyTime}
+                onChange={(e) => setGPSPenaltyTime(e.target.value)}
+              />
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={handleGPSPenaltyDialogClose} color="primary">
+                Cancel
+              </Button>
+              <Button onClick={handleGPSPenaltyDialogConfirm} color="primary">
+                Confirm
+              </Button>
+            </DialogActions>
+          </Dialog>
+
           <Container>
             <Typography variant="h4" align="center" gutterBottom>
-              Switch Team
+              The Sad Buttons
             </Typography>
+            </Container>
+            <Container>
+            <StyledButton
+              key={'gpsPenalty'}
+              variant="contained"
+              variantType="teamSwitch"
+              color="secondary"
+              onClick={() => handleGPSPenaltyClick()}
+            >📌 GPS Penalty 📌
+            </StyledButton>
+
             <StyledButton
               variant="contained"
               onClick={handleTeamSwitchClick}
               color="secondary"
               variantType="teamSwitch"
             >
-              Switch to Chaser Role
+              🏹 I've been cought 🏹
             </StyledButton>
           </Container>
         </div>
