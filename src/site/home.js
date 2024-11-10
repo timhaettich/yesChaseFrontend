@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
@@ -51,6 +51,8 @@ const StyledButton = styled(Button)(({ theme, variantType }) => ({
 export default function Home() {
   const [items, setItems] = useState([]);
   const [currentCard, setCurrentCard] = useState(null);
+  const [opponentCurrentCard, setOpponentCurrentCard] = useState(null);
+  const opponentCurrentCardNotification = useRef(false);
   const [teamName, setTeamName] = useState('');
   const [teamTypeId, setTeamTypeId] = useState('');
   const [teamTimeout, setTeamTimeout] = useState(null);
@@ -63,6 +65,9 @@ export default function Home() {
   const [travelCost, setTravelCost] = useState(0);
   const [selectedTransportId, setSelectedTransportId] = useState(null);
   const [teamSwitchDialogOpen, setTeamSwitchDialogOpen] = useState(false);
+
+  const ingredientTimestamp = process.env.REACT_APP_INGREDIENT_TIME * 1000;
+  const ingredientSentRef = useRef(false);
 
   const fetchActiveCards = async () => {
     try {
@@ -83,6 +88,44 @@ export default function Home() {
     }
   };
 
+  const fetchNotifications = async () => {
+    console.log("Fetch notification", ingredientSentRef.current)
+    var ingredient = null
+    try {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(`${API_BASE_URL}/player/ingredient`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) throw new Error('Network response was not ok');
+      const data = await response.json();
+      ingredient = data.Ingredient;
+    } catch (error) {
+      console.error('Error fetching transports:', error);
+    }
+
+    // Check if the ingredient has been sent already using ref
+    if (!ingredientSentRef.current) {
+      console.log("Send Not", ingredient, Date.now() > ingredientTimestamp)
+      if (Date.now() > ingredientTimestamp && ingredient) {
+
+        const registration = await navigator.serviceWorker.ready;
+        const options = {
+          body: 'A special event has been spawned! Please check the website and reload it!',
+          icon: null,
+        };
+        registration.showNotification('SPECIAL EVENT!', options);
+        // Mark the ingredient as sent using ref
+        ingredientSentRef.current = true;
+        window.location.href = '/';
+      }
+    }
+  };
+
   const fetchCurrentCard = async () => {
     try {
       const token = localStorage.getItem('accessToken');
@@ -96,8 +139,22 @@ export default function Home() {
 
       if (!response.ok) throw new Error('Network response was not ok');
       const data = await response.json();
-      console.log(data.data)
       setCurrentCard(data.data.team.card.id ? data.data.team.card : null);
+      if (data.data.team.opponentCard.id) {
+        if (!opponentCurrentCardNotification.current) {
+          setOpponentCurrentCard(data.data.team.opponentCard)
+          const registration = await navigator.serviceWorker.ready;
+          const options = {
+            body: 'Your opponent just selected a card! You can try to veto it',
+            icon: null,
+          };
+          registration.showNotification('Veto your opponents card!', options);
+          opponentCurrentCardNotification.current = true;
+        }
+      } else {
+        opponentCurrentCardNotification.current = false;
+        setOpponentCurrentCard(null);
+      }
       setTeamName(data.data.team.typeName);
       setTeamTypeId(data.data.team.typeID);
       setTeamTimeout(data.data.team.timeout);
@@ -130,11 +187,14 @@ export default function Home() {
     fetchActiveCards();
     fetchCurrentCard();
     fetchTransports();
+    ingredientSentRef.current = false;
 
     const intervalId = setInterval(() => {
+      console.log('Reload')
       fetchActiveCards();
       fetchCurrentCard();
-    }, 10000);
+      fetchNotifications();
+    }, 2000);
 
     return () => clearInterval(intervalId);
   }, []);
@@ -203,6 +263,29 @@ export default function Home() {
         await fetchCurrentCard();
       } catch (error) {
         console.error('Error completing card:', error);
+      }
+    }
+  };
+
+  const handleCurrentCardOpponentVeto = async () => {
+    if (opponentCurrentCard && window.confirm("Are you sure you want to veto your opponents card?")) {
+      try {
+        const token = localStorage.getItem('accessToken');
+        const response = await fetch(`${API_BASE_URL}/cards/vetoOpponent`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ cardId: opponentCurrentCard.id }),
+        });
+
+        if (!response.ok) throw new Error('Network response was not ok');
+        setOpponentCurrentCard(null);
+        opponentCurrentCardNotification.current = false;
+        await fetchCurrentCard();
+      } catch (error) {
+        console.error('Error vetoing opponent card:', error);
       }
     }
   };
@@ -460,8 +543,8 @@ export default function Home() {
             <Typography variant="h4" align="center" gutterBottom>
               The Sad Buttons
             </Typography>
-            </Container>
-            <Container>
+          </Container>
+          <Container>
             <StyledButton
               key={'gpsPenalty'}
               variant="contained"
@@ -494,6 +577,27 @@ export default function Home() {
                 <Countdown date={teamTimeout} />
               </Typography>
 
+            </div>
+          )}
+          {!teamTimeout && opponentCurrentCard && (
+            <div>
+              <Typography variant="h4" align="center" gutterBottom>
+                Opponent Selected Card
+              </Typography>
+              <div align="center">
+                <StyledCard isCurrent variant="outlined">
+                  <CardContent>
+                    <Typography variant="h5">{opponentCurrentCard.description}</Typography>
+                    <StyledButton
+                      variant="contained"
+                      color="primary"
+                      onClick={handleCurrentCardOpponentVeto}
+                    >
+                      Veto Card
+                    </StyledButton>
+                  </CardContent>
+                </StyledCard>
+              </div>
             </div>
           )}
 
